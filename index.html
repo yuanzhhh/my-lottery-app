@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>幸运大抽奖 - 极致顺滑版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Oswald:wght@700&display=swap");
+
+      body {
+        font-family: "Noto Serif SC", serif;
+        margin: 0;
+        overflow: hidden;
+        background-color: #580000;
+      }
+
+      /* 动态背景 */
+      .bg-festive {
+        background: radial-gradient(
+          circle at center,
+          #8a0000 0%,
+          #4a0000 60%,
+          #1a0000 100%
+        );
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -2;
+      }
+
+      /* 玻璃拟态 */
+      .glass-panel {
+        background: rgba(100, 0, 0, 0.3);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 215, 0, 0.2);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      }
+
+      /* 金色文字 */
+      .text-gold-gradient {
+        background: linear-gradient(
+          to bottom,
+          #fffec8 0%,
+          #ffc800 45%,
+          #d4af37 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+      }
+
+      .btn-gold {
+        background: linear-gradient(180deg, #ffd700 0%, #e6a800 100%);
+        box-shadow: 0 0 20px rgba(255, 170, 0, 0.4),
+          inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        border: 1px solid #b8860b;
+        transition: all 0.2s ease;
+      }
+      .btn-gold:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0 30px rgba(255, 170, 0, 0.6),
+          inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      }
+      .btn-gold:active {
+        transform: translateY(1px);
+      }
+      .btn-gold:disabled {
+        filter: grayscale(1);
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      /* --- 核心滚轮样式 --- */
+      .reel-window {
+        overflow: hidden;
+        position: relative;
+        /* 加上内阴影增加立体感 */
+        box-shadow: inset 0 20px 20px -10px rgba(0, 0, 0, 0.5),
+          inset 0 -20px 20px -10px rgba(0, 0, 0, 0.5);
+        mask-image: linear-gradient(
+          to bottom,
+          transparent,
+          black 15%,
+          black 85%,
+          transparent
+        );
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          transparent,
+          black 15%,
+          black 85%,
+          transparent
+        );
+      }
+
+      .reel-strip {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        will-change: transform; /* 强制开启GPU加速 */
+        /* 初始位置 */
+        transform: translateY(0);
+      }
+
+      .reel-item {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Oswald", sans-serif; /* 数字专用字体 */
+        font-weight: 700;
+        color: #ffd700;
+        /* 稍微调整每个数字的高度 */
+        height: 180px;
+        font-size: 8rem;
+        line-height: 1;
+        text-shadow: 0 0 20px rgba(255, 165, 0, 0.3);
+      }
+
+      @media (min-width: 768px) {
+        .reel-item {
+          height: 240px;
+          font-size: 11rem;
+        }
+      }
+
+      /* 动态模糊滤镜类 - 只有高速运动时添加 */
+      .motion-blur {
+        filter: blur(4px);
+      }
+
+      /* 历史记录滚动条 */
+      .custom-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      .custom-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255, 215, 0, 0.3);
+        border-radius: 4px;
+      }
+
+      #particle-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body
+    class="h-screen w-screen flex flex-col items-center justify-center text-white relative"
+  >
+    <div class="bg-festive"></div>
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- 顶部 -->
+    <header
+      class="absolute top-0 w-full p-6 flex justify-between items-center z-10"
+    >
+      <div class="flex items-center gap-3">
+        <div
+          class="w-2 h-8 bg-[#ffd700] rounded-full shadow-[0_0_10px_#ffd700]"
+        ></div>
+        <div class="text-2xl font-bold tracking-widest text-gold-gradient">
+          ***公司 2025
+        </div>
+      </div>
+      <div
+        class="text-[#ffd700]/80 font-mono text-lg border border-[#ffd700]/30 px-4 py-1 rounded-full bg-black/20"
+      >
+        Pool: <span id="pool-count">100</span>
+      </div>
+    </header>
+
+    <main
+      class="flex flex-col md:flex-row w-full max-w-7xl h-[85vh] p-4 gap-8 z-10 items-center justify-center"
+    >
+      <!-- 左侧光荣榜 -->
+      <aside
+        class="hidden md:flex flex-col w-72 h-[500px] glass-panel rounded-2xl p-5 overflow-hidden border-t-4 border-t-[#ffd700]"
+      >
+        <h3
+          class="text-xl text-center mb-4 text-[#ffd700] tracking-widest uppercase"
+        >
+            已中奖号码
+        </h3>
+        <div
+          id="history-list"
+          class="flex-1 overflow-y-auto custom-scroll space-y-3"
+        >
+          <div class="text-white/30 text-center text-sm mt-10 italic">
+            Waiting for luck...
+          </div>
+        </div>
+      </aside>
+
+      <!-- 中央抽奖区 -->
+      <div class="flex-1 flex flex-col items-center justify-center relative">
+        <h1
+          class="text-5xl md:text-7xl font-black mb-10 text-gold-gradient drop-shadow-2xl tracking-wider"
+        >
+          幸运落谁家
+        </h1>
+
+        <!-- 滚轮窗口 -->
+        <div class="relative">
+          <!-- 装饰边框 -->
+          <div
+            class="absolute -inset-1 rounded-lg bg-gradient-to-b from-[#ffd700] via-[#ff5500] to-[#ffd700] opacity-50 blur-md"
+          ></div>
+
+          <!-- 真正的可视窗口 -->
+          <div
+            class="relative w-80 h-[220px] md:w-[450px] md:h-[280px] glass-panel rounded-lg reel-window bg-black/40 border-2 border-[#ffd700]/50"
+          >
+            <!-- 滚动长条 -->
+            <div id="reel-strip" class="reel-strip">
+              <div class="reel-item">00</div>
+            </div>
+          </div>
+
+          <!-- 左右装饰 -->
+          <div
+            class="absolute top-1/2 -left-8 w-4 h-16 bg-[#ffd700] rounded-l-full opacity-50 transform -translate-y-1/2 shadow-[0_0_15px_#ffd700]"
+          ></div>
+          <div
+            class="absolute top-1/2 -right-8 w-4 h-16 bg-[#ffd700] rounded-r-full opacity-50 transform -translate-y-1/2 shadow-[0_0_15px_#ffd700]"
+          ></div>
+        </div>
+
+        <!-- 控制区 -->
+        <div class="mt-12 flex flex-col items-center gap-4">
+          <button
+            id="start-btn"
+            onclick="startRolling()"
+            class="btn-gold text-[#5a0000] font-black text-3xl px-16 py-5 rounded-full tracking-[0.2em] uppercase outline-none min-w-[300px]"
+          >
+            START
+          </button>
+          <div
+            id="status-text"
+            class="text-[#ffd700] text-sm opacity-0 transition-opacity font-bold tracking-widest"
+          >
+            LUCKY NUMBER
+          </div>
+        </div>
+      </div>
+
+      <!-- 移动端历史 -->
+      <div class="md:hidden w-full glass-panel rounded-xl p-3">
+        <div
+          id="history-mobile"
+          class="flex flex-wrap justify-center gap-2 text-[#ffd700] font-bold"
+        ></div>
+      </div>
+    </main>
+
+    <!-- 隐藏的重置按钮 -->
+    <button
+      id="reset-btn"
+      onclick="resetData()"
+      class="fixed bottom-4 right-4 bg-red-900/50 text-red-300 text-xs px-2 py-1 rounded hidden hover:bg-red-900"
+    >
+      Reset Data
+    </button>
+
+    <script>
+      // --- 配置 ---
+      const CONFIG = {
+        totalNumbers: 100,
+        itemHeightMobile: 180, // 对应 CSS .reel-item height
+        itemHeightDesktop: 240,
+        storageKey: "lottery_pro_v2",
+      };
+
+      // --- 状态 ---
+      let pool = [];
+      let drawn = [];
+      let isAnimating = false;
+
+      // --- DOM ---
+      const reelStrip = document.getElementById("reel-strip");
+      const startBtn = document.getElementById("start-btn");
+      const poolCount = document.getElementById("pool-count");
+      const historyList = document.getElementById("history-list");
+      const historyMobile = document.getElementById("history-mobile");
+      const statusText = document.getElementById("status-text");
+
+      // --- 初始化 ---
+      function init() {
+        loadData();
+        updateUI();
+        initParticles();
+
+        // 绑定双击显示重置
+        document.body.addEventListener("dblclick", (e) => {
+          if (e.target === document.body) {
+            document.getElementById("reset-btn").classList.toggle("hidden");
+          }
+        });
+      }
+
+      function loadData() {
+        const saved = localStorage.getItem(CONFIG.storageKey);
+        if (saved) {
+          const data = JSON.parse(saved);
+          drawn = data.drawn || [];
+        }
+        // 重建池子
+        pool = [];
+        for (let i = 1; i <= CONFIG.totalNumbers; i++) {
+          if (!drawn.includes(i)) pool.push(i);
+        }
+      }
+
+      function saveData() {
+        localStorage.setItem(CONFIG.storageKey, JSON.stringify({ drawn }));
+      }
+
+      function resetData() {
+        if (confirm("Reset all data?")) {
+          localStorage.removeItem(CONFIG.storageKey);
+          location.reload();
+        }
+      }
+
+      function updateUI() {
+        poolCount.innerText = pool.length;
+
+        // 渲染历史
+        if (drawn.length > 0) {
+          historyList.innerHTML = "";
+          historyMobile.innerHTML = "";
+
+          [...drawn].reverse().forEach((num, idx) => {
+            // Desktop
+            const div = document.createElement("div");
+            div.className =
+              "flex justify-between items-center bg-black/20 p-3 rounded border-l-2 border-[#ffd700]";
+            div.innerHTML = `<span class="text-white/50 text-xs">No.${
+              drawn.length - idx
+            }</span><span class="text-2xl font-bold text-[#ffd700]">${num}</span>`;
+            historyList.appendChild(div);
+
+            // Mobile
+            const span = document.createElement("span");
+            span.className =
+              "bg-black/30 px-2 py-1 rounded border border-[#ffd700]/30";
+            span.innerText = num;
+            historyMobile.appendChild(span);
+          });
+        }
+
+        if (pool.length === 0) {
+          startBtn.disabled = true;
+          startBtn.innerText = "已抽完";
+          reelStrip.innerHTML = '<div class="reel-item">END</div>';
+        }
+      }
+
+      // --- 核心：生成滚轮序列 ---
+      // 我们不使用真正的无限滚动，而是生成一个足够长的列表，这比无限循环逻辑更稳定且性能更好
+      function generateReelSequence(winner) {
+        const sequence = [];
+        // 起始数字（显示当前状态）
+        // 中间填充随机数字
+        // 数量决定了滚动时长和速度感
+        // 为了 8秒左右的动画，我们需要大约 60-80 个数字
+        const length = 70;
+
+        for (let i = 0; i < length - 1; i++) {
+          // 随机生成用于视觉效果的数字，允许视觉重复，只要不是最终结果就行
+          sequence.push(Math.floor(Math.random() * 100) + 1);
+        }
+        sequence.push(winner); // 最后一个必须是中奖号码
+        return sequence;
+      }
+
+      // --- 核心：极致顺滑滚动逻辑 ---
+      function startRolling() {
+        if (isAnimating || pool.length === 0) return;
+
+        // 1. 确定中奖者
+        const winnerIndex = Math.floor(Math.random() * pool.length);
+        const winner = pool[winnerIndex];
+
+        // 2. 准备 UI
+        isAnimating = true;
+        startBtn.disabled = true;
+        statusText.style.opacity = "1";
+        statusText.innerText = "ROLLING...";
+
+        // 3. 生成长条 DOM
+        const sequence = generateReelSequence(winner);
+        reelStrip.innerHTML = "";
+        sequence.forEach((num) => {
+          const div = document.createElement("div");
+          div.className = "reel-item";
+          div.innerText = num < 10 ? "0" + num : num;
+          reelStrip.appendChild(div);
+        });
+
+        // 4. 计算高度
+        const isMobile = window.innerWidth < 768;
+        const itemH = isMobile
+          ? CONFIG.itemHeightMobile
+          : CONFIG.itemHeightDesktop;
+        const totalH = (sequence.length - 1) * itemH; // 滚到底部需要的位移
+
+        // 5. 执行动画序列 (CSS Transition Chain)
+        // 使用 setTimeout 触发重绘，确保 transition 生效
+
+        // 初始状态：在顶部 (0px)
+        reelStrip.style.transition = "none";
+        reelStrip.style.transform = "translateY(0px)";
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            // --- 阶段 1: 起步狂飙 (0s -> 2s) ---
+            // 滚到总进度的 40%
+            const distance1 = totalH * 0.45;
+            reelStrip.style.transition =
+              "transform 2s cubic-bezier(0.5, 0, 0.5, 1)"; // 加速启动
+            reelStrip.style.transform = `translateY(-${distance1}px)`;
+            reelStrip.classList.add("motion-blur");
+
+            // --- 阶段 2: 悬疑减速 (2s -> 4s) ---
+            // "假动作"：看起来要停了
+            setTimeout(() => {
+              const distance2 = totalH * 0.55; // 只多滚一点点
+              reelStrip.style.transition = "transform 2s linear"; // 线性慢速
+              reelStrip.style.transform = `translateY(-${distance2}px)`;
+              reelStrip.classList.remove("motion-blur"); // 去掉模糊，让人看清
+            }, 2000);
+
+            // --- 阶段 3: 二次加速 (4s -> 5.5s) ---
+            // "回马枪"：突然又快起来
+            setTimeout(() => {
+              const distance3 = totalH * 0.85;
+              reelStrip.style.transition = "transform 1.5s ease-in"; // 加速
+              reelStrip.style.transform = `translateY(-${distance3}px)`;
+              reelStrip.classList.add("motion-blur"); // 再次模糊
+            }, 4000);
+
+            // --- 阶段 4: 最终锁定 (5.5s -> 7.5s) ---
+            // 缓慢停在终点
+            setTimeout(() => {
+              reelStrip.style.transition =
+                "transform 2.5s cubic-bezier(0.1, 1, 0.1, 1)"; // 经典的 ease-out
+              reelStrip.style.transform = `translateY(-${totalH}px)`;
+              reelStrip.classList.remove("motion-blur"); // 清晰定格
+            }, 5500);
+
+            // --- 结束回调 ---
+            setTimeout(() => {
+              finishDraw(winner, winnerIndex);
+            }, 8000); // 留一点余量
+          });
+        });
+      }
+
+      function finishDraw(winner, originalIndex) {
+        isAnimating = false;
+
+        // 数据处理
+        pool.splice(originalIndex, 1);
+        drawn.push(winner);
+        saveData();
+        updateUI();
+
+        // UI 反馈
+        startBtn.disabled = false;
+        statusText.innerText = `CONGRATULATIONS!`;
+
+        // 爆炸特效
+        fireConfetti();
+      }
+
+      // --- 粒子与礼花 ---
+      function fireConfetti() {
+        var duration = 3000;
+        var end = Date.now() + duration;
+
+        (function frame() {
+          confetti({
+            particleCount: 5,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 },
+            colors: ["#ffd700", "#ff0000", "#ffffff"],
+          });
+          confetti({
+            particleCount: 5,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 },
+            colors: ["#ffd700", "#ff0000", "#ffffff"],
+          });
+
+          if (Date.now() < end) {
+            requestAnimationFrame(frame);
+          }
+        })();
+      }
+
+      function initParticles() {
+        const canvas = document.getElementById("particle-canvas");
+        const ctx = canvas.getContext("2d");
+        let width,
+          height,
+          particles = [];
+
+        const resize = () => {
+          width = canvas.width = window.innerWidth;
+          height = canvas.height = window.innerHeight;
+        };
+        window.addEventListener("resize", resize);
+        resize();
+
+        class Particle {
+          constructor() {
+            this.reset();
+          }
+          reset() {
+            this.x = Math.random() * width;
+            this.y = height + Math.random() * 50;
+            this.v = Math.random() * 1 + 0.2;
+            this.r = Math.random() * 2 + 1;
+            this.a = Math.random() * 0.5;
+          }
+          update() {
+            this.y -= this.v;
+            if (this.y < -10) this.reset();
+          }
+          draw() {
+            ctx.fillStyle = `rgba(255,215,0,${this.a})`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        for (let i = 0; i < 40; i++) particles.push(new Particle());
+
+        function loop() {
+          ctx.clearRect(0, 0, width, height);
+          particles.forEach((p) => {
+            p.update();
+            p.draw();
+          });
+          requestAnimationFrame(loop);
+        }
+        loop();
+      }
+
+      init();
+    </script>
+  </body>
+</html>
