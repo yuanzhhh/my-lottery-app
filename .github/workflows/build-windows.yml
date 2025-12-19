@@ -1,8 +1,5 @@
 name: Build Windows App
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -14,12 +11,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'pnpm'
       - run: pnpm install -g pake-cli
       - run: pake ./index.html --name "抽奖"
+      - run: Get-ChildItem -Recurse -Include *.exe,*.msi | ForEach-Object { Write-Host $_.FullName }
+        shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: windows-app
           path: |
             **/*.exe
             **/*.msi
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: pnpm install -g pake-cli
+      - run: pake ./index.html --name "抽奖"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: |
+            **/*.dmg
+            **/*.app
